@@ -14,44 +14,58 @@ export default function Chat() {
     const [user, setUser] = useState(""),
      [messages, setMessages] = useState([]);
 
-  useEffect(() => {
-    // Initial fetch
-    const fetchMessages = async () => {
-      const { data, error } = await supabase
-        .from("messages")
-        .select("id,created_at,message,user : users(id,name)")
-        .order("id", { ascending: false })
-        .limit(50);
+ useEffect(() => {
+  const fetchMessages = async () => {
+    const { data, error } = await supabase
+      .from("messages")
+      .select("id, created_at, message, user:users(id, name)")
+      .order("id", { ascending: false })
+      .limit(50);
 
-      if (error) {
-        console.error("Fetch error:", error);
-      } else {
-        setMessages(data.reverse());
-      }
-    };
+    if (error) {
+      console.error("Fetch error:", error);
+      return;
+    }
 
-    fetchMessages();
+    setMessages([...data].reverse());
+  };
 
-    // Realtime subscription
-    const subscription = supabase
-      .channel("public:messages") // table name prefixed with schema
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "messages" },
-        (payload) => {
-          console.log("Realtime payload:", payload);
+  fetchMessages();
 
-          // Re-fetch or update state manually
-          fetchMessages();
+  const channel = supabase
+    .channel("public:messages")
+    .on(
+      "postgres_changes",
+      {
+        event: "INSERT",
+        schema: "public",
+        table: "messages",
+      },
+      async (payload) => {
+        console.log("New message:", payload);
+
+        const { data, error } = await supabase
+          .from("messages")
+          .select("id, created_at, message, user:users(id, name)")
+          .eq("id", payload.new.id)
+          .single();
+
+        if (error) {
+          console.error("Realtime fetch error:", error);
+          return;
         }
-      )
-      .subscribe();
 
-    // Cleanup on unmount
-    return () => {
-      supabase.removeChannel(subscription);
-    };
-  }, []);
+        setMessages((prev) => [...prev, data]);
+      }
+    )
+    .subscribe((status) => {
+      console.log("Realtime Status:", status);
+    });
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}, []);
 
     useEffect(() => {
       setUser(JSON.parse(localStorage.getItem("user")));
