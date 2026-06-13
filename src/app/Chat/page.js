@@ -14,26 +14,36 @@ export default function Chat() {
     const [user, setUser] = useState(""),
      [messages, setMessages] = useState([]);
 
- useEffect(() => {
+useEffect(() => {
   const fetchMessages = async () => {
     const { data, error } = await supabase
       .from("messages")
-      .select("id, created_at, message, user:users(id, name)")
+      .select(`
+        id,
+        created_at,
+        message,
+        user:users (
+          id,
+          name
+        )
+      `)
       .order("id", { ascending: false })
       .limit(50);
 
     if (error) {
-      console.error("Fetch error:", error);
+      console.error("Fetch Error:", error);
       return;
     }
 
     setMessages([...data].reverse());
   };
 
+  // Initial load
   fetchMessages();
 
+  // Realtime updates
   const channel = supabase
-    .channel("public:messages")
+    .channel("messages-channel")
     .on(
       "postgres_changes",
       {
@@ -42,25 +52,29 @@ export default function Chat() {
         table: "messages",
       },
       async (payload) => {
-        console.log("New message:", payload);
-
         const { data, error } = await supabase
           .from("messages")
-          .select("id, created_at, message, user:users(id, name)")
+          .select(`
+            id,
+            created_at,
+            message,
+            user:users (
+              id,
+              name
+            )
+          `)
           .eq("id", payload.new.id)
           .single();
 
         if (error) {
-          console.error("Realtime fetch error:", error);
+          console.error("Realtime Error:", error);
           return;
         }
 
         setMessages((prev) => [...prev, data]);
       }
     )
-    .subscribe((status) => {
-      console.log("Realtime Status:", status);
-    });
+    .subscribe();
 
   return () => {
     supabase.removeChannel(channel);
